@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>화면 선택</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2em;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+
+        .tab-btn {
+            padding: 12px 30px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .tab-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .tab-btn.active {
+            background: white;
+            color: #667eea;
+            border-color: white;
+        }
+
+        .sources-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .source-item {
+            background: white;
+            border-radius: 12px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 3px solid transparent;
+        }
+
+        .source-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .source-item.selected {
+            border-color: #667eea;
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+        }
+
+        .source-thumbnail {
+            width: 100%;
+            height: 140px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            background: #f0f0f0;
+        }
+
+        .source-name {
+            font-size: 14px;
+            color: #333;
+            text-align: center;
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .actions {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        .btn {
+            padding: 15px 40px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.9);
+            color: #667eea;
+        }
+
+        .btn-secondary:hover {
+            background: white;
+        }
+
+        .no-sources {
+            text-align: center;
+            color: white;
+            font-size: 1.2em;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+        }
+
+        .loading {
+            text-align: center;
+            color: white;
+            font-size: 1.5em;
+            padding: 60px;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖥️ 공유할 화면 선택</h1>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="screens">전체 화면</button>
+            <button class="tab-btn" data-tab="windows">창</button>
+        </div>
+
+        <div class="tab-content active" id="screens-content">
+            <div id="screensGrid" class="sources-grid">
+                <div class="loading">화면 목록을 불러오는 중...</div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="windows-content">
+            <div id="windowsGrid" class="sources-grid">
+                <div class="loading">창 목록을 불러오는 중...</div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn btn-secondary" id="cancelBtn">취소</button>
+            <button class="btn btn-primary" id="shareBtn" disabled>공유하기</button>
+        </div>
+    </div>
+
+    <script>
+        let selectedSource = null;
+        let allSources = { screens: [], windows: [] };
+
+        // 탭 전환
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.tab;
+                
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                
+                btn.classList.add('active');
+                document.getElementById(tab + '-content').classList.add('active');
+            });
+        });
+
+        // Electron API를 통해 화면 소스 가져오기
+        async function loadSources() {
+            try {
+                const sources = await window.electron.getSources();
+                
+                // 화면과 창 분리
+                allSources.screens = sources.filter(s => s.id.startsWith('screen'));
+                allSources.windows = sources.filter(s => s.id.startsWith('window'));
+
+                renderSources('screens', allSources.screens);
+                renderSources('windows', allSources.windows);
+            } catch (err) {
+                console.error('화면 소스 로드 실패:', err);
+                document.getElementById('screensGrid').innerHTML = 
+                    '<div class="no-sources">화면을 불러올 수 없습니다.</div>';
+                document.getElementById('windowsGrid').innerHTML = 
+                    '<div class="no-sources">창을 불러올 수 없습니다.</div>';
+            }
+        }
+
+        // 소스 렌더링
+        function renderSources(type, sources) {
+            const gridId = type === 'screens' ? 'screensGrid' : 'windowsGrid';
+            const grid = document.getElementById(gridId);
+
+            if (sources.length === 0) {
+                grid.innerHTML = `<div class="no-sources">사용 가능한 ${type === 'screens' ? '화면' : '창'}이 없습니다.</div>`;
+                return;
+            }
+
+            grid.innerHTML = sources.map(source => `
+                <div class="source-item" data-id="${source.id}" data-name="${source.name}">
+                    <img class="source-thumbnail" src="${source.thumbnail.toDataURL()}" alt="${source.name}">
+                    <div class="source-name" title="${source.name}">${source.name}</div>
+                </div>
+            `).join('');
+
+            // 클릭 이벤트 추가
+            grid.querySelectorAll('.source-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    document.querySelectorAll('.source-item').forEach(i => i.classList.remove('selected'));
+                    item.classList.add('selected');
+                    
+                    selectedSource = {
+                        id: item.dataset.id,
+                        name: item.dataset.name
+                    };
+                    
+                    document.getElementById('shareBtn').disabled = false;
+                });
+            });
+        }
+
+        // 공유하기 버튼
+        document.getElementById('shareBtn').addEventListener('click', async () => {
+            if (!selectedSource) return;
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        mandatory: {
+                            chromeMediaSource: 'desktop',
+                            chromeMediaSourceId: selectedSource.id
+                        }
+                    }
+                });
+
+                // 부모 창으로 스트림 전달
+                window.opener.postMessage({
+                    type: 'screen-share-selected',
+                    sourceId: selectedSource.id,
+                    sourceName: selectedSource.name
+                }, '*');
+
+                window.close();
+            } catch (err) {
+                console.error('화면 공유 시작 실패:', err);
+                alert('화면 공유를 시작할 수 없습니다.');
+            }
+        });
+
+        // 취소 버튼
+        document.getElementById('cancelBtn').addEventListener('click', () => {
+            window.close();
+        });
+
+        // 페이지 로드 시 소스 불러오기
+        window.addEventListener('load', loadSources);
+    </script>
+</body>
+</html>
